@@ -19,7 +19,7 @@ cd ComfyUI/custom_nodes
 
 2. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/ComfyUI-CohernetVideoSampler.git
+git clone https://github.com/ShmuelRonen/ComfyUI-CohernetVideoSampler.git
 ```
 
 3. Restart ComfyUI
