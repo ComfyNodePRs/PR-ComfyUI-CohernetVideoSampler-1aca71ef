@@ -2,6 +2,9 @@
 
 A custom node for ComfyUI that enables coherent video generation while maintaining efficient memory usage, specifically optimized for heavy models like Flux.
 
+![image](https://github.com/user-attachments/assets/9b97aa0e-fcec-4dc6-8843-f5b1416aa66b)
+
+
 ## Features
 
 - 🎥 Frame-by-frame video processing with motion preservation
