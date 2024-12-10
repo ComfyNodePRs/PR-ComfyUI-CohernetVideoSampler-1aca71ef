@@ -19,58 +19,65 @@ class MotionGuidedSampler(nn.Module):
     def process_frames(self, latents, model, positive, negative, seed, steps, cfg, sampler_name, scheduler, denoise):
         batch_size = latents.shape[0]
         processed_frames = []
+        device = comfy.model_management.get_torch_device()
+        
+        latents = latents.to(device)
         
         pbar = comfy.utils.ProgressBar(batch_size)
         print(f"Processing {batch_size} frames with motion guidance")
-        
-        first_frame = comfy.sample.sample(
+
+        sampler = comfy.samplers.KSampler(
             model,
-            noise=comfy.sample.prepare_noise(latents[0:1], seed, None),
             steps=steps,
-            cfg=cfg,
-            sampler_name=sampler_name,
+            device=device,
+            sampler=sampler_name,
             scheduler=scheduler,
-            positive=positive,
-            negative=negative,
-            latent_image=latents[0:1],
             denoise=denoise
         )
+
+        noise = comfy.sample.prepare_noise(latents[0:1], seed, None).to(device)
+        first_frame = sampler.sample(
+            noise,
+            positive,
+            negative,
+            cfg=cfg,
+            latent_image=latents[0:1],
+            force_full_denoise=True
+        )
         
+        first_frame = first_frame.to(device)
         processed_frames.append(first_frame)
-        self.prev_styled = first_frame
-        prev_original = latents[0:1]
+        prev_orig = latents[0:1].to(device)
+        prev_styled = first_frame
         
         for i in range(1, batch_size):
-            current_original = latents[i:i+1]
+            current_orig = latents[i:i+1].to(device)
+            motion = current_orig - prev_orig
+            motion_guided = prev_styled + (motion * 0.8)
             
-            motion = self.extract_motion_vector(current_original, prev_original)
-            
-            motion_guided = self.apply_motion_vector(self.prev_styled, motion)
-            
-            current_frame = comfy.sample.sample(
-                model,
-                noise=comfy.sample.prepare_noise(motion_guided, seed + i, None),
-                steps=steps,
+            current_noise = comfy.sample.prepare_noise(motion_guided, seed + i, None).to(device)
+            current_frame = sampler.sample(
+                current_noise,
+                positive,
+                negative,
                 cfg=cfg,
-                sampler_name=sampler_name,
-                scheduler=scheduler,
-                positive=positive,
-                negative=negative,
                 latent_image=motion_guided,
-                denoise=min(0.6, denoise)  
+                force_full_denoise=True
             )
             
+            current_frame = current_frame.to(device)
             processed_frames.append(current_frame)
-            self.prev_styled = current_frame
-            prev_original = current_original
+            prev_orig = current_orig
+            prev_styled = current_frame
             
             pbar.update(1)
             
             if i % 5 == 0:
                 torch.cuda.empty_cache()
         
-        return torch.cat(processed_frames, dim=0)
-
+        result = torch.cat(processed_frames, dim=0)
+        return result.to(device)
+        
     def forward(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latents, denoise):
         try:
             samples = self.process_frames(
