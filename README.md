@@ -29,6 +29,8 @@ git clone https://github.com/ShmuelRonen/ComfyUI-CohernetVideoSampler.git
 
 ## Usage
 
+### For Deforum like resaults please use 'shuttle-3-diffusion-fp8.safetensors' 4 steps flux model
+
 The node appears in the node menu as "Cohernet Video Sampler". 
 
 ### Inputs
