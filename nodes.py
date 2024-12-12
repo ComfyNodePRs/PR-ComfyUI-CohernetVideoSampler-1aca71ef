@@ -4,30 +4,52 @@ import comfy.sample
 import comfy.model_management
 import comfy.utils
 import gc
+import logging
 
 class MotionGuidedSampler(nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        motion_strength: float = 0.5,
+        consistency_strength: float = 0.9,
+        denoise_strength: float = 0.8
+    ):
         super().__init__()
-        self.prev_styled = None
+        self.motion_strength = motion_strength
+        self.consistency_strength = consistency_strength
+        self.denoise_strength = denoise_strength
         
-    def extract_motion_vector(self, current_latent, prev_latent):
-        return current_latent - prev_latent
-        
-    def apply_motion_vector(self, content, motion_vector, strength=0.8):
-        return content + (motion_vector * strength)
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
-    def process_frames(self, latents, model, positive, negative, seed, steps, cfg, sampler_name, scheduler, denoise):
-        batch_size = latents.shape[0]
+    def extract_motion_vector(self, current_latent: torch.Tensor, prev_latent: torch.Tensor) -> torch.Tensor:
+        try:
+            return current_latent - prev_latent
+        except RuntimeError as e:
+            self.logger.error(f"Motion extraction error: {e}")
+            return torch.zeros_like(current_latent)
+
+    def apply_motion_vector(self, content: torch.Tensor, motion_vector: torch.Tensor) -> torch.Tensor:
+        try:
+            motion_applied = content + (motion_vector * self.motion_strength)
+            if torch.isnan(motion_applied).any():
+                self.logger.warning("NaN detected in motion application")
+                return content
+            return motion_applied
+        except RuntimeError as e:
+            self.logger.error(f"Motion application error: {e}")
+            return content
+
+    def process_frames(self, latent_frames, model, positive, negative, seed, steps, cfg, sampler_name, scheduler, denoise):
+        batch_size = latent_frames.shape[0]
         processed_frames = []
         device = comfy.model_management.get_torch_device()
         
-        latents = latents.to(device)
-        
+        latent_frames = latent_frames.to(device)
         pbar = comfy.utils.ProgressBar(batch_size)
-        print(f"Processing {batch_size} frames with motion guidance")
-
+        
+        # Initialize sampler
         sampler = comfy.samplers.KSampler(
-            model,
+            model, 
             steps=steps,
             device=device,
             sampler=sampler_name,
@@ -35,25 +57,29 @@ class MotionGuidedSampler(nn.Module):
             denoise=denoise
         )
 
-        noise = comfy.sample.prepare_noise(latents[0:1], seed, None).to(device)
+        # Process first frame
+        noise = comfy.sample.prepare_noise(latent_frames[0:1], seed, None).to(device)
         first_frame = sampler.sample(
             noise,
             positive,
             negative,
             cfg=cfg,
-            latent_image=latents[0:1],
+            latent_image=latent_frames[0:1],
             force_full_denoise=True
         )
         
-        first_frame = first_frame.to(device)
         processed_frames.append(first_frame)
-        prev_orig = latents[0:1].to(device)
+        prev_orig = latent_frames[0:1].to(device)
         prev_styled = first_frame
         
+        pbar.update(1)
+
+        # Process remaining frames
         for i in range(1, batch_size):
-            current_orig = latents[i:i+1].to(device)
-            motion = current_orig - prev_orig
-            motion_guided = prev_styled + (motion * 0.8)
+            current_orig = latent_frames[i:i+1].to(device)
+            
+            motion = self.extract_motion_vector(current_orig, prev_orig)
+            motion_guided = self.apply_motion_vector(prev_styled, motion)
             
             current_noise = comfy.sample.prepare_noise(motion_guided, seed + i, None).to(device)
             current_frame = sampler.sample(
@@ -65,7 +91,6 @@ class MotionGuidedSampler(nn.Module):
                 force_full_denoise=True
             )
             
-            current_frame = current_frame.to(device)
             processed_frames.append(current_frame)
             prev_orig = current_orig
             prev_styled = current_frame
@@ -73,34 +98,33 @@ class MotionGuidedSampler(nn.Module):
             pbar.update(1)
             
             if i % 5 == 0:
-                torch.cuda.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                self.logger.info(f"Processed {i}/{batch_size} frames")
         
         result = torch.cat(processed_frames, dim=0)
         return result.to(device)
-        
-    def forward(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latents, denoise):
-        try:
-            samples = self.process_frames(
-                latents,
-                model,
-                positive,
-                negative,
-                noise_seed,
-                steps,
-                cfg,
-                sampler_name,
-                scheduler,
-                denoise
-            )
-            return samples
-            
-        except Exception as e:
-            print(f"Error in motion-guided sampling: {str(e)}")
-            raise e
-        finally:
-            torch.cuda.empty_cache()
 
-class MotionGuidedSamplerNode:
+    def forward(self, latent_frames, model, positive, negative, noise_seed, steps, cfg, sampler_name, scheduler, denoise):
+        try:
+            return self.process_frames(
+                latent_frames=latent_frames,
+                model=model,
+                positive=positive,
+                negative=negative,
+                seed=noise_seed,
+                steps=steps,
+                cfg=cfg,
+                sampler_name=sampler_name,
+                scheduler=scheduler,
+                denoise=denoise
+            )
+        except Exception as e:
+            self.logger.error(f"Processing error: {str(e)}")
+            raise e
+
+class CohernetVideoSampler:
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -118,6 +142,8 @@ class MotionGuidedSamplerNode:
                 "scheduler": (["simple", "karras", "exponential", "normal", "ddim_uniform"],),
                 "denoise": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "motion_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "consistency_strength": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "denoise_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05}),
             }
         }
     
@@ -125,27 +151,39 @@ class MotionGuidedSamplerNode:
     FUNCTION = "sample"
     CATEGORY = "sampling"
 
-    def sample(self, model, video_latents, positive, negative, seed, steps, 
-               cfg, sampler_name, scheduler, denoise, motion_strength):
+    def sample(self, model, video_latents, positive, negative, seed, steps,
+               cfg, sampler_name, scheduler, denoise, motion_strength,
+               consistency_strength, denoise_strength):
         
-        sampler = MotionGuidedSampler()
-        samples = sampler(
-            model=model,
-            noise_seed=seed,
-            steps=steps,
-            cfg=cfg,
-            sampler_name=sampler_name,
-            scheduler=scheduler,
-            positive=positive,
-            negative=negative,
-            latents=video_latents['samples'],
-            denoise=denoise
+        sampler = MotionGuidedSampler(
+            motion_strength=motion_strength,
+            consistency_strength=consistency_strength,
+            denoise_strength=denoise_strength
         )
         
-        return ({"samples": samples},)
+        try:
+            samples = sampler(
+                latent_frames=video_latents['samples'],
+                model=model,
+                positive=positive,
+                negative=negative,
+                noise_seed=seed,
+                steps=steps,
+                cfg=cfg,
+                sampler_name=sampler_name,
+                scheduler=scheduler,
+                denoise=denoise
+            )
+            
+            return ({"samples": samples},)
+            
+        except Exception as e:
+            logging.error(f"Sampling error: {str(e)}")
+            raise e
 
+# Node registration
 NODE_CLASS_MAPPINGS = {
-    "CohernetVideoSampler": MotionGuidedSamplerNode
+    "CohernetVideoSampler": CohernetVideoSampler
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
