@@ -1,9 +1,8 @@
-# ComfyUI Coherent Video Sampler Node (V0.2)
+# ComfyUI Coherent Video Sampler Node (V0.3)
 
 A custom node for ComfyUI that enables coherent video generation while maintaining efficient memory usage, specifically optimized for heavy models like Flux.
 
-![image](https://github.com/user-attachments/assets/9b97aa0e-fcec-4dc6-8843-f5b1416aa66b)
-
+![image](https://github.com/user-attachments/assets/a690a69b-675c-4658-a1be-761017b0fabb)
 
 ## Features
 
@@ -12,6 +11,7 @@ A custom node for ComfyUI that enables coherent video generation while maintaini
 - 🔄 Progressive denoising with coherence maintenance
 - 💫 Dynamic quality control and motion guidance
 - 🎨 Style preservation across frames
+- 🛠️ Advanced adjustment controls for fine-tuning
 
 ## Installation
 
@@ -29,11 +29,69 @@ git clone https://github.com/ShmuelRonen/ComfyUI-CohernetVideoSampler.git
 
 ## Usage
 
-#### For Deforum like resaults please use 'shuttle-3-diffusion-fp8.safetensors' 4 steps flux model
+#### For Deforum-like results please use 'shuttle-3-diffusion-fp8.safetensors' 4 steps flux model
 
 The node appears in the node menu as "Cohernet Video Sampler". 
 
-### Inputs
+### Core Parameters Guide
+
+The sampler now includes four key adjustment parameters that work together to control different aspects of video generation:
+
+1. **denoise** (0.0-1.0):
+   - Primary denoising control for the sampling process
+   - Controls overall deviation from input
+   - Lower values (0.3-0.5): Subtle changes, closer to input
+   - Higher values (0.7-0.9): More dramatic transformations
+   - Recommended: 0.6 for balanced results
+
+2. **motion_strength** (0.0-1.0):
+   - Controls motion intensity between frames
+   - Affects transition smoothness
+   - Lower values (0.3-0.4): More static, stable output
+   - Higher values (0.7-0.8): Pronounced motion, dynamic transitions
+   - Recommended: 0.5 for natural movement
+
+3. **consistency_strength** (0.0-1.0):
+   - Maintains visual consistency across frames
+   - Controls style preservation
+   - Lower values (0.7-0.8): More variation allowed
+   - Higher values (0.9-1.0): Strict consistency enforcement
+   - Recommended: 0.9 for coherent results
+
+4. **denoise_strength** (0.0-1.0):
+   - Secondary denoising for artifact reduction
+   - Fine-tunes final output quality
+   - Lower values (0.5-0.7): Preserve more details
+   - Higher values (0.8-0.9): Smoother, cleaner output
+   - Recommended: 0.8 for balanced detail preservation
+
+### Parameter Combinations for Different Effects
+
+#### High Quality Stable Video
+```
+denoise: 0.6
+motion_strength: 0.5
+consistency_strength: 0.9
+denoise_strength: 0.8
+```
+
+#### Dynamic Movement Priority
+```
+denoise: 0.5
+motion_strength: 0.7
+consistency_strength: 0.8
+denoise_strength: 0.7
+```
+
+#### Maximum Detail Preservation
+```
+denoise: 0.4
+motion_strength: 0.4
+consistency_strength: 0.85
+denoise_strength: 0.6
+```
+
+### Other Inputs
 - `model`: Your diffusion model (tested extensively with Flux)
 - `positive`: Positive prompt conditioning
 - `negative`: Negative prompt conditioning
@@ -43,8 +101,6 @@ The node appears in the node menu as "Cohernet Video Sampler".
 - `cfg`: Classifier free guidance scale
 - `sampler_name`: Choice of sampler
 - `scheduler`: Choice of scheduler
-- `denoise`: Denoising strength
-- `motion_strength`: Strength of motion preservation
 
 ### Memory Management
 The node implements several memory optimization techniques:
@@ -55,21 +111,6 @@ The node implements several memory optimization techniques:
 
 This allows it to work smoothly even with memory-intensive models like Flux without OOM errors.
 
-## Example Workflow
-
-1. Load your video
-2. Encode it to latent space using VAE Encode
-3. Connect to Coherent Video Sampler
-4. Set your sampling parameters
-5. Generate coherent video output
-
-## Parameters Guide
-
-- `denoise`: Lower values (0.4-0.6) preserve more of the original motion
-- `motion_strength`: Higher values (0.7-0.9) maintain stronger frame-to-frame coherence
-- `steps`: Even with heavy models, 20-30 steps usually sufficient
-- `cfg`: Standard values (7-9) work well for most cases
-
 ## Memory Usage Examples
 
 When using with Flux model:
@@ -77,11 +118,32 @@ When using with Flux model:
 - 40 frame video @ 512x512: ~10GB VRAM
 - Processing happens in windows of frames to maintain stable memory usage
 
+## Optimization Tips
+
+1. **For Smoother Videos:**
+   - Increase consistency_strength
+   - Decrease motion_strength slightly
+   - Keep denoise moderate
+   - Maintain high denoise_strength
+
+2. **For More Dynamic Videos:**
+   - Increase motion_strength
+   - Decrease consistency_strength slightly
+   - Lower denoise_strength for detail
+   - Adjust denoise based on desired change level
+
+3. **For Maximum Quality:**
+   - Balance all parameters
+   - Use higher consistency_strength
+   - Moderate motion_strength
+   - Higher denoise_strength
+
 ## Known Limitations
 
 - Very long videos might need to be processed in segments
 - Extreme motion can affect coherence
 - High denoise values might reduce motion preservation
+- Parameter interactions can be complex
 
 ## Future Plans
 
@@ -89,6 +151,7 @@ When using with Flux model:
 - Custom denoising patterns
 - Advanced style preservation options
 - Multi-model support optimization
+- Parameter presets for common use cases
 
 ## Contributing
 
@@ -102,4 +165,3 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 - ComfyUI team for the amazing framework
 - Flux model team for the inspiration in handling heavy models
-```
