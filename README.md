@@ -15,17 +15,21 @@ A custom node for ComfyUI that enables coherent video generation while maintaini
 
 ## Installation
 
-1. Navigate to your ComfyUI custom nodes directory:
+Install from ComfyUI manager
+
+or
+
+Navigate to your ComfyUI custom nodes directory:
 ```bash
 cd ComfyUI/custom_nodes
 ```
 
-2. Clone this repository:
+Clone this repository:
 ```bash
 git clone https://github.com/ShmuelRonen/ComfyUI-CohernetVideoSampler.git
 ```
 
-3. Restart ComfyUI
+Restart ComfyUI
 
 ## Usage
 
